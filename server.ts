@@ -339,6 +339,11 @@ async function syncFromFirestore(): Promise<boolean> {
 // Firestore direct mutation helpers
 async function saveProductToFirestore(product: Product) {
   if (!firestoreDb) return;
+  const payloadSize = Buffer.byteLength(JSON.stringify(product), 'utf8');
+  if (payloadSize > 950000) {
+    console.warn(`[F1 STORE SERVER] Warning: Product ${product.id} size (${payloadSize} bytes) is near or exceeds Firestore 1MB limit.`);
+    return;
+  }
   await setDoc(doc(firestoreDb, 'products', product.id), product);
 }
 
@@ -349,6 +354,11 @@ async function deleteProductFromFirestore(productId: string) {
 
 async function saveQRConfigToFirestore(config: QRPaymentConfig) {
   if (!firestoreDb) return;
+  const payloadSize = Buffer.byteLength(JSON.stringify(config), 'utf8');
+  if (payloadSize > 950000) {
+    console.warn(`[F1 STORE SERVER] Warning: QR config size (${payloadSize} bytes) is near or exceeds Firestore 1MB limit.`);
+    return;
+  }
   await setDoc(doc(firestoreDb, 'settings', 'qrConfig'), config);
 }
 

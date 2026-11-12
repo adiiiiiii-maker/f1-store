@@ -20,6 +20,7 @@ import {
   firestoreGetUsers,
   firestoreGetTickets
 } from './firebase';
+import { ensureSafeFirestoreImage } from '../utils/imageCompressor';
 
 export const ADMIN_EMAIL = 'deshmaneadinath128@gmail.com';
 
@@ -255,13 +256,14 @@ export function getProducts(): Product[] {
 }
 
 export async function saveProduct(product: Omit<Product, 'id' | 'createdAt'>): Promise<Product> {
+  const safeImageUrl = await ensureSafeFirestoreImage(product.imageUrl || '', 800, 800).catch(() => product.imageUrl || '');
   const newProduct: Product = {
     id: 'f1_prod_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
     title: product.title.trim(),
     category: product.category,
     price: Number(product.price),
     description: product.description,
-    imageUrl: product.imageUrl,
+    imageUrl: safeImageUrl,
     isFeaturedWide: Boolean(product.isFeaturedWide),
     rating: product.rating || 5,
     createdAt: new Date().toISOString()
@@ -332,7 +334,15 @@ export function getQRConfig(): QRPaymentConfig {
 
 export async function updateQRConfig(newConfig: Partial<QRPaymentConfig>): Promise<QRPaymentConfig> {
   const current = getQRConfig();
-  const updated: QRPaymentConfig = { ...current, ...newConfig };
+  let safeQrImage = newConfig.qrImageUrl || current.qrImageUrl;
+  if (safeQrImage && safeQrImage.startsWith('data:image/')) {
+    safeQrImage = await ensureSafeFirestoreImage(safeQrImage, 800, 800).catch(() => safeQrImage);
+  }
+  const updated: QRPaymentConfig = {
+    ...current,
+    ...newConfig,
+    qrImageUrl: safeQrImage
+  };
 
   // 1. Save directly to Firebase Firestore
   try {

@@ -25,7 +25,7 @@ import {
   Database,
   RefreshCw
 } from 'lucide-react';
-import { compressImage } from '../utils/imageCompressor';
+import { compressImage, getBase64ByteSize, formatBytes } from '../utils/imageCompressor';
 import { SalesOverviewChart } from './SalesOverviewChart';
 import {
   Product,
@@ -84,6 +84,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
   const [itemIsFeatured, setItemIsFeatured] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isPublishingItem, setIsPublishingItem] = useState(false);
+  const [isCompressingProductImage, setIsCompressingProductImage] = useState(false);
+  const [productImageSizeInfo, setProductImageSizeInfo] = useState<{ size: number; formatted: string } | null>(null);
   const [itemPublishError, setItemPublishError] = useState('');
   const [itemPublishSuccess, setItemPublishSuccess] = useState(false);
 
@@ -272,22 +274,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
     );
   }
 
-  // 1. Manage Items Handler (Strictly Awaits Firebase Cloud Save, Never Fails Silently)
+  // 1. Manage Items Handler (Strictly Awaits Firebase Cloud Save with Document Size Guard)
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!itemTitle.trim() || !itemPrice || isPublishingItem) return;
+    if (!itemTitle.trim() || !itemPrice || isPublishingItem || isCompressingProductImage) return;
 
     try {
       setIsPublishingItem(true);
       setItemPublishError('');
       setItemPublishSuccess(false);
 
+      let finalImageUrl = itemImageUrl.trim();
+
+      // Size Guard: If user pasted a massive Data URL directly or file exceeds 900KB
+      if (finalImageUrl.startsWith('data:image/')) {
+        let byteSize = getBase64ByteSize(finalImageUrl);
+        if (byteSize > 900000) {
+          // Re-compress at 0.5 quality and 640px to safely fit under 1MB Firestore limit
+          try {
+            finalImageUrl = await compressImage(finalImageUrl, 640, 640, 0.5, 900000);
+            byteSize = getBase64ByteSize(finalImageUrl);
+          } catch (compErr: any) {
+            setItemPublishError('Image is too large for Firestore (exceeds 900 KB). Please select a smaller photo.');
+            setIsPublishingItem(false);
+            return;
+          }
+        }
+      }
+
       await saveProduct({
         title: itemTitle.trim(),
         category: itemCategory,
         price: Number(itemPrice),
         description: itemDescription.trim() || 'Exclusive high-performance edition from F1 Store.',
-        imageUrl: itemImageUrl || 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=800&q=80',
+        imageUrl: finalImageUrl || 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=800&q=80',
         isFeaturedWide: itemIsFeatured,
         rating: 5
       });
@@ -300,6 +320,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
       setItemPrice('');
       setItemDescription('');
       setItemImageUrl('');
+      setProductImageSizeInfo(null);
       setItemIsFeatured(false);
       refreshAllData();
     } catch (err: any) {
@@ -310,17 +331,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
     }
   };
 
-  const handleImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Automatic Product Image Compression on Upload (HTML5 Canvas 800px max, JPEG 0.72 quality)
+  const handleImageFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setItemImageUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    try {
+      setIsCompressingProductImage(true);
+      setItemPublishError('');
+
+      // Compress to max 800x800px, JPEG 0.72 quality with 900KB safety guard
+      const compressedBase64 = await compressImage(file, 800, 800, 0.72, 900000);
+      const byteSize = getBase64ByteSize(compressedBase64);
+
+      setItemImageUrl(compressedBase64);
+      setProductImageSizeInfo({
+        size: byteSize,
+        formatted: formatBytes(byteSize)
+      });
+    } catch (err: any) {
+      console.error('Failed to compress product image:', err);
+      setItemPublishError(err?.message || 'Failed to process product image. Please select a valid JPEG/PNG image.');
+    } finally {
+      setIsCompressingProductImage(false);
+      if (e.target) {
+        e.target.value = '';
+      }
     }
   };
 
+  // Automatic QR Image Compression on Upload (HTML5 Canvas 800px max, JPEG 0.72 quality)
   const handleQRFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     e.preventDefault();
     const file = e.target.files?.[0];
@@ -329,8 +370,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
     try {
       setIsCompressingQR(true);
       setQrErrorMessage('');
-      // Client-side HTML5 Canvas compression (max 500x500px, quality 0.85)
-      const compressedBase64 = await compressImage(file, 500, 500, 0.85);
+      // Client-side HTML5 Canvas compression (max 800x800px, quality 0.72, max 900KB)
+      const compressedBase64 = await compressImage(file, 800, 800, 0.72, 900000);
       setQrImagePreview(compressedBase64);
       hasUnsavedQR.current = true;
     } catch (err: any) {
@@ -354,8 +395,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
       setIsSavingQR(true);
       setQrErrorMessage('');
 
+      let finalQrImage = qrImagePreview || qrConfig.qrImageUrl;
+
+      // Size Guard: Ensure QR Image is under 900KB
+      if (finalQrImage.startsWith('data:image/')) {
+        const byteSize = getBase64ByteSize(finalQrImage);
+        if (byteSize > 900000) {
+          finalQrImage = await compressImage(finalQrImage, 640, 640, 0.5, 900000);
+        }
+      }
+
       const updated = await updateQRConfig({
-        qrImageUrl: qrImagePreview || qrConfig.qrImageUrl,
+        qrImageUrl: finalQrImage,
         merchantName: qrMerchant.trim() || 'F1 STORE OFFICIAL',
         upiId: qrUpi.trim(),
         instructions: qrInstructions.trim()
@@ -734,8 +785,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
                         <input
                           type="text"
                           value={itemImageUrl}
-                          onChange={(e) => setItemImageUrl(e.target.value)}
-                          placeholder="Paste image URL or upload file..."
+                          onChange={(e) => {
+                            setItemImageUrl(e.target.value);
+                            if (e.target.value.startsWith('data:image/')) {
+                              const s = getBase64ByteSize(e.target.value);
+                              setProductImageSizeInfo({ size: s, formatted: formatBytes(s) });
+                            } else {
+                              setProductImageSizeInfo(null);
+                            }
+                          }}
+                          placeholder="Paste image URL or upload photo..."
                           className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#03140e] border border-[#16c784]/30 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:border-[#16c784]"
                         />
                         <input
@@ -747,13 +806,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
                         />
                         <button
                           type="button"
+                          disabled={isCompressingProductImage}
                           onClick={() => fileInputRef.current?.click()}
-                          className="px-3.5 py-2.5 rounded-xl bg-[#08291e] border border-[#16c784]/40 text-[#16c784] hover:bg-[#0b3829] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                          className="px-3.5 py-2.5 rounded-xl bg-[#08291e] border border-[#16c784]/40 text-[#16c784] hover:bg-[#0b3829] disabled:opacity-50 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
                         >
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>Upload</span>
+                          {isCompressingProductImage ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#16c784]" />
+                              <span>Compressing...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>Upload</span>
+                            </>
+                          )}
                         </button>
                       </div>
+
+                      {/* Compression preview & Firestore size safety indicator */}
+                      {itemImageUrl && (
+                        <div className="mt-2 flex items-center gap-3 p-2 rounded-xl bg-[#020d09] border border-[#16c784]/25">
+                          <img
+                            src={itemImageUrl}
+                            alt="Preview"
+                            className="w-10 h-10 object-cover rounded-lg border border-[#16c784]/30 shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-[#16c784] shrink-0" />
+                              <span className="text-[11px] font-mono text-[#16c784] font-bold truncate">
+                                Canvas Compressed (Max 800px, JPEG 0.72)
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
+                              Size: <strong className="text-white">{productImageSizeInfo?.formatted || formatBytes(getBase64ByteSize(itemImageUrl))}</strong> (Safe for Cloud Firestore)
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
