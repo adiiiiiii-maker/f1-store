@@ -1,0 +1,103 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Vault items in the luxury F1 Store catalog",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 150 },
+        "category": { "type": "string", "enum": ["NEW ARRIVALS", "SILVER", "GOLD", "PLATINUM", "DIAMOND"] },
+        "price": { "type": "number" },
+        "description": { "type": "string", "maxLength": 1000 },
+        "imageUrl": { "type": "string", "maxLength": 1000000 },
+        "isFeaturedWide": { "type": "boolean" },
+        "rating": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "category", "price", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Store customer and admin user profiles",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["admin", "customer"] },
+        "isBanned": { "type": "boolean" },
+        "banReason": { "type": "string", "maxLength": 500 },
+        "bannedAt": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email", "role", "isBanned", "createdAt"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer purchase orders with 12-digit UTR payment confirmations",
+      "type": "object",
+      "properties": {
+        "productTitle": { "type": "string", "maxLength": 150 },
+        "category": { "type": "string" },
+        "amount": { "type": "number" },
+        "itemsCount": { "type": "number" },
+        "userEmail": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "utrNumber": { "type": "string", "maxLength": 12 },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "adminNote": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["productTitle", "amount", "userEmail", "utrNumber", "status", "createdAt"]
+    },
+    "SupportTicket": {
+      "title": "SupportTicket",
+      "description": "Private customer support inquiry thread",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 128 },
+        "subject": { "type": "string", "maxLength": 200 },
+        "category": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "enum": ["OPEN", "REPLIED", "RESOLVED"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userEmail", "subject", "status", "createdAt", "updatedAt"]
+    },
+    "QRPaymentConfig": {
+      "title": "QRPaymentConfig",
+      "description": "Active payment QR code gateway settings",
+      "type": "object",
+      "properties": {
+        "qrImageUrl": { "type": "string", "maxLength": 2000000 },
+        "merchantName": { "type": "string", "maxLength": 100 },
+        "upiId": { "type": "string", "maxLength": 100 },
+        "instructions": { "type": "string", "maxLength": 500 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["qrImageUrl", "merchantName", "instructions"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Collection of catalog items"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Registered user accounts and ban enforcement"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Submitted UTR orders"
+    },
+    "/tickets/{ticketId}": {
+      "schema": "SupportTicket",
+      "description": "Support tickets"
+    },
+    "/settings/qrConfig": {
+      "schema": "QRPaymentConfig",
+      "description": "Storewide Payment QR Configuration"
+    }
+  }
+}

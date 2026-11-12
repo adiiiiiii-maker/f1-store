@@ -1,0 +1,6 @@
+{
+  "name": "F1 STORE",
+  "description": "Ultra-luxury dark-forest and neon-emerald digital boutique with tier-grade collections and instant verified UTR payments.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

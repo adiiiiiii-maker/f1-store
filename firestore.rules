@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email.lower() == 'deshmaneadinath128@gmail.com'
+      );
+    }
+
+    // 1. Products Collection
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin() || true;
+    }
+
+    // 2. Settings (Payment QR Gateway & Store Config)
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin() || true;
+    }
+
+    // 3. Users Collection
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isAdmin();
+    }
+
+    // 4. Orders Collection
+    match /orders/{orderId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if isAdmin();
+    }
+
+    // 5. Support Tickets
+    match /tickets/{ticketId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isAdmin();
+    }
+
+    // 6. Wishlists
+    match /wishlists/{wishlistId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}
