@@ -1,4 +1,4 @@
-import { Product, User, Order, SupportTicket, QRPaymentConfig } from '../types';
+import { Product, User, Order, SupportTicket, QRPaymentConfig, AdConfig } from '../types';
 import { DEFAULT_PAYMENT_QR } from './defaultQR';
 import {
   COLLECTIONS,
@@ -6,11 +6,14 @@ import {
   firestoreDeleteProduct,
   firestoreGetQRConfig,
   firestoreSaveQRConfig,
+  firestoreGetAdConfig,
+  firestoreSaveAdConfig,
   firestoreSaveUser,
   firestoreSaveOrder,
   firestoreSaveTicket,
   subscribeToProducts,
   subscribeToQRConfig,
+  subscribeToAdConfig,
   subscribeToOrders,
   subscribeToUsers,
   subscribeToTickets,
@@ -18,7 +21,8 @@ import {
   firestoreGetProducts,
   firestoreGetOrders,
   firestoreGetUsers,
-  firestoreGetTickets
+  firestoreGetTickets,
+  testFirestoreConnection
 } from './firebase';
 import { ensureSafeFirestoreImage } from '../utils/imageCompressor';
 
@@ -31,6 +35,7 @@ const STORAGE_KEYS = {
   ORDERS: 'f1_store_orders',
   TICKETS: 'f1_store_support_tickets',
   QR_CONFIG: 'f1_store_qr_config',
+  AD_CONFIG: 'f1_store_ad_config',
   CART: 'f1_store_cart',
   WISHLIST: 'f1_store_wishlist'
 };
@@ -128,6 +133,12 @@ export async function syncWithBackend(): Promise<void> {
       window.dispatchEvent(new Event('f1_qr_updated'));
     }
 
+    const serverAds = await apiRequest<AdConfig>('/api/ad-config');
+    if (serverAds !== null && typeof serverAds.adsEnabled === 'boolean') {
+      setItem(STORAGE_KEYS.AD_CONFIG, serverAds);
+      window.dispatchEvent(new Event('f1_ads_updated'));
+    }
+
     if (currentUser) {
       const serverOrders = await apiRequest<Order[]>('/api/orders', { headers });
       if (serverOrders !== null) {
@@ -171,6 +182,15 @@ if (typeof window !== 'undefined') {
       }
     });
 
+    // 2b. Live Ad Manager listener
+    subscribeToAdConfig((cloudAd) => {
+      if (cloudAd && typeof cloudAd.adsEnabled === 'boolean') {
+        const normalized = normalizeAdConfig(cloudAd);
+        setItem(STORAGE_KEYS.AD_CONFIG, normalized);
+        window.dispatchEvent(new Event('f1_ads_updated'));
+      }
+    });
+
     // 3. Live Orders listener
     subscribeToOrders((cloudOrders) => {
       if (cloudOrders && cloudOrders.length > 0) {
@@ -195,6 +215,9 @@ if (typeof window !== 'undefined') {
       }
     });
 
+    // Validate connection on boot
+    testFirestoreConnection().catch(() => {});
+
     // Initial check: if QR config not yet in Firestore, seed the default luxury payment QR
     firestoreGetQRConfig().then((cloudQR) => {
       if (!cloudQR) {
@@ -202,6 +225,20 @@ if (typeof window !== 'undefined') {
       } else {
         setItem(STORAGE_KEYS.QR_CONFIG, cloudQR);
         window.dispatchEvent(new Event('f1_qr_updated'));
+      }
+    }).catch(() => {});
+
+    // Initial check: if Ad config not yet in Firestore (or uses legacy keys), seed/upgrade to Top + Bottom slots
+    firestoreGetAdConfig().then((cloudAd: any) => {
+      if (!cloudAd) {
+        firestoreSaveAdConfig(DEFAULT_AD_CONFIG).catch(() => {});
+      } else {
+        const normalized = normalizeAdConfig(cloudAd);
+        setItem(STORAGE_KEYS.AD_CONFIG, normalized);
+        window.dispatchEvent(new Event('f1_ads_updated'));
+        if (cloudAd.topAdCode === undefined || cloudAd.bottomAdCode === undefined) {
+          firestoreSaveAdConfig(normalized).catch(() => {});
+        }
       }
     }).catch(() => {});
 
@@ -230,6 +267,7 @@ export async function syncAllStoreDataToFirebase(): Promise<{
   const currentOrders = getOrders();
   const currentTickets = getTickets();
   const currentQR = getQRConfig();
+  const currentAds = getAdConfig();
 
   // 1. Client Direct Push to Firestore
   const summary = await firestoreSyncAllToCloud({
@@ -237,7 +275,8 @@ export async function syncAllStoreDataToFirebase(): Promise<{
     users: currentUsers,
     orders: currentOrders,
     tickets: currentTickets,
-    qrConfig: currentQR
+    qrConfig: currentQR,
+    adConfig: currentAds
   });
 
   // 2. Server API Push to Firestore
@@ -358,6 +397,75 @@ export async function updateQRConfig(newConfig: Partial<QRPaymentConfig>): Promi
 
   // 3. Sync to backend
   apiRequest('/api/qr-config', {
+    method: 'POST',
+    body: JSON.stringify(updated)
+  }).catch(() => {});
+
+  return updated;
+}
+
+// 2b. Ad Manager Configuration (Top 728x90 Slim Banner + Bottom Compact Ad, Enabled by Default)
+export const DEFAULT_AD_CONFIG: AdConfig = {
+  adsEnabled: true,
+  topAdCode: `<script>\n  atOptions = {\n    'key' : '700161a195030f69d565e7da9eee709c',\n    'format' : 'iframe',\n    'height' : 90,\n    'width' : 728,\n    'params' : {}\n  };\n</script>\n<script src="https://bauval.org/22/700161a195030f69d565e7da9eee709c"></script>`,
+  bottomAdCode: `<script async="async" data-cfasync="false" src="https://bauval.org/21/1e3fbfa983b22517546236be29a124d4"></script>\n<div id="container-1e3fbfa983b22517546236be29a124d4"></div>`
+};
+
+export function normalizeAdConfig(raw: any): AdConfig {
+  if (!raw) return DEFAULT_AD_CONFIG;
+  const adsEnabled = typeof raw.adsEnabled === 'boolean' ? raw.adsEnabled : DEFAULT_AD_CONFIG.adsEnabled;
+
+  // Use new topAdCode/bottomAdCode if present; otherwise migrate legacy footerBannerCode->topAdCode & nativeBannerCode->bottomAdCode
+  const topAdCode =
+    raw.topAdCode !== undefined
+      ? raw.topAdCode
+      : raw.footerBannerCode !== undefined
+      ? raw.footerBannerCode
+      : DEFAULT_AD_CONFIG.topAdCode;
+
+  const bottomAdCode =
+    raw.bottomAdCode !== undefined
+      ? raw.bottomAdCode
+      : raw.nativeBannerCode !== undefined
+      ? raw.nativeBannerCode
+      : DEFAULT_AD_CONFIG.bottomAdCode;
+
+  return {
+    adsEnabled,
+    topAdCode,
+    bottomAdCode,
+    updatedAt: typeof raw.updatedAt === 'string' && raw.updatedAt ? raw.updatedAt : new Date().toISOString()
+  };
+}
+
+export function getAdConfig(): AdConfig {
+  const stored = getItem<any>(STORAGE_KEYS.AD_CONFIG, null);
+  return normalizeAdConfig(stored);
+}
+
+export async function updateAdConfig(newConfig: Partial<AdConfig>): Promise<AdConfig> {
+  const current = getAdConfig();
+  const updated: AdConfig = {
+    adsEnabled: typeof newConfig.adsEnabled === 'boolean' ? newConfig.adsEnabled : current.adsEnabled,
+    topAdCode: newConfig.topAdCode !== undefined ? newConfig.topAdCode : current.topAdCode,
+    bottomAdCode: newConfig.bottomAdCode !== undefined ? newConfig.bottomAdCode : current.bottomAdCode,
+    updatedAt: new Date().toISOString()
+  };
+
+  // 1. Save directly to Firebase Firestore at /settings/adConfig
+  try {
+    await firestoreSaveAdConfig(updated);
+  } catch (err: any) {
+    console.error('Failed to save Ad Config to Firestore:', err);
+    throw new Error(err.message || 'Failed to save Ad Settings to Firebase Firestore');
+  }
+
+  // 2. Update local state & broadcast update event
+  setItem(STORAGE_KEYS.AD_CONFIG, updated);
+  window.dispatchEvent(new Event('f1_ads_updated'));
+
+  // 3. Sync to backend server
+  apiRequest('/api/ad-config', {
     method: 'POST',
     body: JSON.stringify(updated)
   }).catch(() => {});

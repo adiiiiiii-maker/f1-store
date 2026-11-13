@@ -77,3 +77,11 @@ export interface CartItem {
   product: Product;
   quantity: number;
 }
+
+export interface AdConfig {
+  adsEnabled: boolean;
+  topAdCode: string;
+  bottomAdCode: string;
+  updatedAt?: string;
+}
+

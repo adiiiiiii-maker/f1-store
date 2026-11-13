@@ -5,13 +5,14 @@ import {
   doc,
   getDocs,
   getDoc,
+  getDocFromServer,
   setDoc,
   deleteDoc,
   onSnapshot
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Product, User, Order, SupportTicket, QRPaymentConfig } from '../types';
+import { Product, User, Order, SupportTicket, QRPaymentConfig, AdConfig } from '../types';
 
 // Initialize Firebase App
 export const app = initializeApp(firebaseConfig);
@@ -81,6 +82,16 @@ export const COLLECTIONS = {
   WISHLISTS: 'wishlists'
 };
 
+export function sanitizeForFirestore<T extends Record<string, any>>(obj: T): T {
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      clean[key] = value;
+    }
+  }
+  return clean as T;
+}
+
 // 1. Products
 export async function firestoreGetProducts(): Promise<Product[]> {
   try {
@@ -94,7 +105,7 @@ export async function firestoreGetProducts(): Promise<Product[]> {
 export async function firestoreSaveProduct(product: Product): Promise<void> {
   const path = `${COLLECTIONS.PRODUCTS}/${product.id}`;
   try {
-    await setDoc(doc(db, COLLECTIONS.PRODUCTS, product.id), product);
+    await setDoc(doc(db, COLLECTIONS.PRODUCTS, product.id), sanitizeForFirestore(product));
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
   }
@@ -126,9 +137,42 @@ export async function firestoreGetQRConfig(): Promise<QRPaymentConfig | null> {
 export async function firestoreSaveQRConfig(config: QRPaymentConfig): Promise<void> {
   const path = `${COLLECTIONS.SETTINGS}/qrConfig`;
   try {
-    await setDoc(doc(db, COLLECTIONS.SETTINGS, 'qrConfig'), config);
+    await setDoc(doc(db, COLLECTIONS.SETTINGS, 'qrConfig'), sanitizeForFirestore(config));
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
+  }
+}
+
+// 2b. Settings (Ad Manager Config at /settings/adConfig)
+export async function firestoreGetAdConfig(): Promise<AdConfig | null> {
+  const path = `${COLLECTIONS.SETTINGS}/adConfig`;
+  try {
+    const snap = await getDoc(doc(db, COLLECTIONS.SETTINGS, 'adConfig'));
+    if (snap.exists()) {
+      return snap.data() as AdConfig;
+    }
+    return null;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, path);
+  }
+}
+
+export async function firestoreSaveAdConfig(config: AdConfig): Promise<void> {
+  const path = `${COLLECTIONS.SETTINGS}/adConfig`;
+  try {
+    await setDoc(doc(db, COLLECTIONS.SETTINGS, 'adConfig'), sanitizeForFirestore(config));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, path);
+  }
+}
+
+export async function testFirestoreConnection(): Promise<void> {
+  try {
+    await getDocFromServer(doc(db, COLLECTIONS.SETTINGS, 'adConfig'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
+    }
   }
 }
 
@@ -145,7 +189,7 @@ export async function firestoreGetUsers(): Promise<User[]> {
 export async function firestoreSaveUser(user: User): Promise<void> {
   const path = `${COLLECTIONS.USERS}/${user.id}`;
   try {
-    await setDoc(doc(db, COLLECTIONS.USERS, user.id), user);
+    await setDoc(doc(db, COLLECTIONS.USERS, user.id), sanitizeForFirestore(user));
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
   }
@@ -164,7 +208,7 @@ export async function firestoreGetOrders(): Promise<Order[]> {
 export async function firestoreSaveOrder(order: Order): Promise<void> {
   const path = `${COLLECTIONS.ORDERS}/${order.id}`;
   try {
-    await setDoc(doc(db, COLLECTIONS.ORDERS, order.id), order);
+    await setDoc(doc(db, COLLECTIONS.ORDERS, order.id), sanitizeForFirestore(order));
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
   }
@@ -183,7 +227,7 @@ export async function firestoreGetTickets(): Promise<SupportTicket[]> {
 export async function firestoreSaveTicket(ticket: SupportTicket): Promise<void> {
   const path = `${COLLECTIONS.TICKETS}/${ticket.id}`;
   try {
-    await setDoc(doc(db, COLLECTIONS.TICKETS, ticket.id), ticket);
+    await setDoc(doc(db, COLLECTIONS.TICKETS, ticket.id), sanitizeForFirestore(ticket));
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
   }
@@ -214,6 +258,21 @@ export function subscribeToQRConfig(onData: (config: QRPaymentConfig) => void): 
     },
     (err) => {
       console.warn('QR Config subscription warning:', err);
+    }
+  );
+  return unsub;
+}
+
+export function subscribeToAdConfig(onData: (config: AdConfig) => void): () => void {
+  const unsub = onSnapshot(
+    doc(db, COLLECTIONS.SETTINGS, 'adConfig'),
+    (snap) => {
+      if (snap.exists()) {
+        onData(snap.data() as AdConfig);
+      }
+    },
+    (err) => {
+      console.warn('Ad Config subscription warning:', err);
     }
   );
   return unsub;
@@ -267,6 +326,7 @@ export async function firestoreSyncAllToCloud(data: {
   orders: Order[];
   tickets: SupportTicket[];
   qrConfig: QRPaymentConfig;
+  adConfig?: AdConfig;
 }): Promise<{ products: number; users: number; orders: number; tickets: number }> {
   // 1. Sync Users
   for (const u of data.users) {
@@ -275,6 +335,11 @@ export async function firestoreSyncAllToCloud(data: {
 
   // 2. Sync QR
   await firestoreSaveQRConfig(data.qrConfig);
+
+  // 2b. Sync Ad Config if provided
+  if (data.adConfig) {
+    await firestoreSaveAdConfig(data.adConfig);
+  }
 
   // 3. Sync Store Info
   await setDoc(doc(db, COLLECTIONS.SETTINGS, 'storeInfo'), {

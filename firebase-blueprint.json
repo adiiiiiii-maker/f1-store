@@ -76,6 +76,18 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["qrImageUrl", "merchantName", "instructions"]
+    },
+    "AdConfig": {
+      "title": "AdConfig",
+      "description": "Storefront Adsterra advertisement configuration",
+      "type": "object",
+      "properties": {
+        "adsEnabled": { "type": "boolean" },
+        "topAdCode": { "type": "string", "maxLength": 20000 },
+        "bottomAdCode": { "type": "string", "maxLength": 20000 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["adsEnabled", "topAdCode", "bottomAdCode"]
     }
   },
   "firestore": {
@@ -98,6 +110,10 @@
     "/settings/qrConfig": {
       "schema": "QRPaymentConfig",
       "description": "Storewide Payment QR Configuration"
+    },
+    "/settings/adConfig": {
+      "schema": "AdConfig",
+      "description": "Storewide Ad Manager Configuration"
     }
   }
 }

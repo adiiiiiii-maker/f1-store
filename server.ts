@@ -95,13 +95,57 @@ interface QRPaymentConfig {
   instructions: string;
 }
 
+interface AdConfig {
+  adsEnabled: boolean;
+  topAdCode: string;
+  bottomAdCode: string;
+  updatedAt?: string;
+}
+
 interface DatabaseSchema {
   products: Product[];
   users: User[];
   orders: Order[];
   tickets: SupportTicket[];
   qrConfig: QRPaymentConfig;
+  adConfig: AdConfig;
   wishlists: Record<string, string[]>;
+}
+
+const DEFAULT_AD_CONFIG: AdConfig = {
+  adsEnabled: true,
+  topAdCode: `<script>\n  atOptions = {\n    'key' : '700161a195030f69d565e7da9eee709c',\n    'format' : 'iframe',\n    'height' : 90,\n    'width' : 728,\n    'params' : {}\n  };\n</script>\n<script src="https://bauval.org/22/700161a195030f69d565e7da9eee709c"></script>`,
+  bottomAdCode: `<script async="async" data-cfasync="false" src="https://bauval.org/21/1e3fbfa983b22517546236be29a124d4"></script>\n<div id="container-1e3fbfa983b22517546236be29a124d4"></div>`
+};
+
+function sanitizeForFirestore<T extends Record<string, any>>(obj: T): T {
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      clean[key] = value;
+    }
+  }
+  return clean as T;
+}
+
+function normalizeAdConfig(raw: any): AdConfig {
+  if (!raw) return DEFAULT_AD_CONFIG;
+  return {
+    adsEnabled: typeof raw.adsEnabled === 'boolean' ? raw.adsEnabled : DEFAULT_AD_CONFIG.adsEnabled,
+    topAdCode:
+      raw.topAdCode !== undefined
+        ? raw.topAdCode
+        : raw.footerBannerCode !== undefined
+        ? raw.footerBannerCode
+        : DEFAULT_AD_CONFIG.topAdCode,
+    bottomAdCode:
+      raw.bottomAdCode !== undefined
+        ? raw.bottomAdCode
+        : raw.nativeBannerCode !== undefined
+        ? raw.nativeBannerCode
+        : DEFAULT_AD_CONFIG.bottomAdCode,
+    updatedAt: typeof raw.updatedAt === 'string' && raw.updatedAt ? raw.updatedAt : new Date().toISOString()
+  };
 }
 
 // Default Luxury Payment QR SVG
@@ -229,6 +273,7 @@ function createInitialDb(): DatabaseSchema {
       upiId: 'f1store@vipaxis',
       instructions: 'Scan with any UPI / Banking App (GPay, PhonePe, Paytm, CRED). Transfer the exact order amount and note your 12-digit UTR.'
     },
+    adConfig: DEFAULT_AD_CONFIG,
     wishlists: {}
   };
 }
@@ -256,6 +301,7 @@ let db: DatabaseSchema = (() => {
         upiId: 'f1store@vipaxis',
         instructions: 'Scan with any UPI / Banking App. Note your 12-digit UTR.'
       };
+      parsed.adConfig = normalizeAdConfig(parsed.adConfig);
       parsed.wishlists = parsed.wishlists || {};
       return parsed;
     }
@@ -304,6 +350,18 @@ async function syncFromFirestore(): Promise<boolean> {
       db.qrConfig = qrSnap.data() as QRPaymentConfig;
     } else {
       await setDoc(doc(firestoreDb, 'settings', 'qrConfig'), db.qrConfig).catch(() => {});
+    }
+
+    // 3b. Fetch Ad Config from Firestore settings (auto-upgrade legacy schema if needed)
+    const adSnap = await getDoc(doc(firestoreDb, 'settings', 'adConfig'));
+    if (adSnap.exists()) {
+      const rawAd = adSnap.data() as any;
+      db.adConfig = normalizeAdConfig(rawAd);
+      if (rawAd.topAdCode === undefined || rawAd.bottomAdCode === undefined) {
+        await setDoc(doc(firestoreDb, 'settings', 'adConfig'), sanitizeForFirestore(db.adConfig)).catch(() => {});
+      }
+    } else {
+      await setDoc(doc(firestoreDb, 'settings', 'adConfig'), sanitizeForFirestore(db.adConfig)).catch(() => {});
     }
 
     // 4. Save Website Info to Firestore settings
@@ -362,19 +420,24 @@ async function saveQRConfigToFirestore(config: QRPaymentConfig) {
   await setDoc(doc(firestoreDb, 'settings', 'qrConfig'), config);
 }
 
+async function saveAdConfigToFirestore(config: AdConfig) {
+  if (!firestoreDb) return;
+  await setDoc(doc(firestoreDb, 'settings', 'adConfig'), sanitizeForFirestore(config));
+}
+
 async function saveUserToFirestore(user: User) {
   if (!firestoreDb) return;
-  await setDoc(doc(firestoreDb, 'users', user.id), user);
+  await setDoc(doc(firestoreDb, 'users', user.id), sanitizeForFirestore(user));
 }
 
 async function saveOrderToFirestore(order: Order) {
   if (!firestoreDb) return;
-  await setDoc(doc(firestoreDb, 'orders', order.id), order);
+  await setDoc(doc(firestoreDb, 'orders', order.id), sanitizeForFirestore(order));
 }
 
 async function saveTicketToFirestore(ticket: SupportTicket) {
   if (!firestoreDb) return;
-  await setDoc(doc(firestoreDb, 'tickets', ticket.id), ticket);
+  await setDoc(doc(firestoreDb, 'tickets', ticket.id), sanitizeForFirestore(ticket));
 }
 
 async function syncAllToFirestore() {
@@ -382,11 +445,12 @@ async function syncAllToFirestore() {
 
   // 1. Admin & Users
   for (const u of db.users) {
-    await setDoc(doc(firestoreDb, 'users', u.id), u);
+    await setDoc(doc(firestoreDb, 'users', u.id), sanitizeForFirestore(u));
   }
 
-  // 2. Payment QR & Website Settings
-  await setDoc(doc(firestoreDb, 'settings', 'qrConfig'), db.qrConfig);
+  // 2. Payment QR, Ad Config & Website Settings
+  await setDoc(doc(firestoreDb, 'settings', 'qrConfig'), sanitizeForFirestore(db.qrConfig));
+  await setDoc(doc(firestoreDb, 'settings', 'adConfig'), sanitizeForFirestore(db.adConfig));
   await setDoc(doc(firestoreDb, 'settings', 'storeInfo'), {
     storeName: 'F1 STORE',
     adminEmail: ADMIN_EMAIL,
@@ -695,6 +759,43 @@ app.post('/api/qr-config', requireAdmin, async (req: Request, res: Response) => 
 
   res.json({
     ...db.qrConfig,
+    cloudSynced: true
+  });
+});
+
+// 10a. Ad Config: Get (Public - Refreshes from Firestore)
+app.get('/api/ad-config', async (req: Request, res: Response) => {
+  if (firestoreDb) {
+    try {
+      const snap = await getDoc(doc(firestoreDb, 'settings', 'adConfig'));
+      if (snap.exists()) {
+        db.adConfig = normalizeAdConfig(snap.data());
+      }
+    } catch {}
+  }
+  res.json(normalizeAdConfig(db.adConfig));
+});
+
+// 10a-post. Ad Config: Update (Admin Only - Persists to Cloud Firestore /settings/adConfig)
+app.post('/api/ad-config', requireAdmin, async (req: Request, res: Response) => {
+  const { adsEnabled, topAdCode, bottomAdCode } = req.body;
+  const current = normalizeAdConfig(db.adConfig);
+  db.adConfig = {
+    adsEnabled: typeof adsEnabled === 'boolean' ? adsEnabled : current.adsEnabled,
+    topAdCode: topAdCode !== undefined ? topAdCode : current.topAdCode,
+    bottomAdCode: bottomAdCode !== undefined ? bottomAdCode : current.bottomAdCode,
+    updatedAt: new Date().toISOString()
+  };
+
+  saveDbLocally();
+  try {
+    await saveAdConfigToFirestore(db.adConfig);
+  } catch (err) {
+    console.error('[F1 STORE SERVER] Error saving Ad config to Firestore:', err);
+  }
+
+  res.json({
+    ...db.adConfig,
     cloudSynced: true
   });
 });

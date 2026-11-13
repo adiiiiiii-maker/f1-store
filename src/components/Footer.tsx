@@ -5,75 +5,79 @@ interface FooterProps {
   onOpenSupport: () => void;
 }
 
+export const FeaturesTrustSection: React.FC = () => {
+  return (
+    <section className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="flex items-start gap-3.5 p-4 rounded-2xl bg-[#03140e]/60 border border-[#16c784]/15">
+          <div className="p-2.5 rounded-xl bg-[#041d14] text-[#16c784] border border-[#16c784]/30 shrink-0">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#e5c98b] font-mono">
+              Encrypted Gateway
+            </h4>
+            <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+              Dynamic 5-minute QR generation with automated banking session expiry.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3.5 p-4 rounded-2xl bg-[#03140e]/60 border border-[#16c784]/15">
+          <div className="p-2.5 rounded-xl bg-[#041d14] text-[#16c784] border border-[#16c784]/30 shrink-0">
+            <Zap className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#e5c98b] font-mono">
+              Instant UTR Dispatch
+            </h4>
+            <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+              Direct 12-digit transaction ledger settlement with real-time verification.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3.5 p-4 rounded-2xl bg-[#03140e]/60 border border-[#16c784]/15">
+          <div className="p-2.5 rounded-xl bg-[#041d14] text-[#16c784] border border-[#16c784]/30 shrink-0">
+            <Award className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#e5c98b] font-mono">
+              Tier Authenticity
+            </h4>
+            <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+              Individually curated Silver, Gold, Platinum, and Diamond grade allocations.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3.5 p-4 rounded-2xl bg-[#03140e]/60 border border-[#16c784]/15">
+          <div className="p-2.5 rounded-xl bg-[#041d14] text-[#16c784] border border-[#16c784]/30 shrink-0">
+            <Headphones className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#e5c98b] font-mono">
+              Private Concierge
+            </h4>
+            <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+              End-to-end encrypted ticket support accessible 24/7 inside the app.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+};
+
 export const Footer: React.FC<FooterProps> = ({ onOpenSupport }) => {
   return (
-    <footer className="w-full bg-[#020b08] border-t border-[#16c784]/20 pt-12 pb-8 mt-20 relative overflow-hidden">
+    <footer className="w-full bg-[#020b08] border-t border-[#16c784]/20 pt-8 pb-8 mt-6 relative overflow-hidden">
       {/* Background ambient radial glow */}
       <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-96 h-40 bg-[#16c784]/10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        
-        {/* 1. Value Propositions Strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 pb-12 border-b border-[#16c784]/15">
-          <div className="flex items-start gap-3.5 p-4 rounded-2xl bg-[#03140e]/60 border border-[#16c784]/15">
-            <div className="p-2.5 rounded-xl bg-[#041d14] text-[#16c784] border border-[#16c784]/30 shrink-0">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#e5c98b] font-mono">
-                Encrypted Gateway
-              </h4>
-              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                Dynamic 5-minute QR generation with automated banking session expiry.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3.5 p-4 rounded-2xl bg-[#03140e]/60 border border-[#16c784]/15">
-            <div className="p-2.5 rounded-xl bg-[#041d14] text-[#16c784] border border-[#16c784]/30 shrink-0">
-              <Zap className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#e5c98b] font-mono">
-                Instant UTR Dispatch
-              </h4>
-              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                Direct 12-digit transaction ledger settlement with real-time verification.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3.5 p-4 rounded-2xl bg-[#03140e]/60 border border-[#16c784]/15">
-            <div className="p-2.5 rounded-xl bg-[#041d14] text-[#16c784] border border-[#16c784]/30 shrink-0">
-              <Award className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#e5c98b] font-mono">
-                Tier Authenticity
-              </h4>
-              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                Individually curated Silver, Gold, Platinum, and Diamond grade allocations.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3.5 p-4 rounded-2xl bg-[#03140e]/60 border border-[#16c784]/15">
-            <div className="p-2.5 rounded-xl bg-[#041d14] text-[#16c784] border border-[#16c784]/30 shrink-0">
-              <Headphones className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#e5c98b] font-mono">
-                Private Concierge
-              </h4>
-              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                End-to-end encrypted ticket support accessible 24/7 inside the app.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* 2. Middle Row: Brand & Socials */}
-        <div className="py-8 flex flex-col md:flex-row items-center justify-between gap-6">
+        {/* Middle Row: Brand & Socials */}
+        <div className="pb-8 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="text-center md:text-left">
             <span className="font-brand text-2xl font-black gold-gradient-text tracking-[0.2em]">
               F1 STORE

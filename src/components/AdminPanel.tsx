@@ -23,7 +23,9 @@ import {
   TrendingUp,
   Loader2,
   Database,
-  RefreshCw
+  RefreshCw,
+  Megaphone,
+  RotateCcw
 } from 'lucide-react';
 import { compressImage, getBase64ByteSize, formatBytes } from '../utils/imageCompressor';
 import { SalesOverviewChart } from './SalesOverviewChart';
@@ -34,7 +36,8 @@ import {
   User,
   Order,
   SupportTicket,
-  QRPaymentConfig
+  QRPaymentConfig,
+  AdConfig
 } from '../types';
 import {
   getProducts,
@@ -43,6 +46,9 @@ import {
   clearAllProducts,
   getQRConfig,
   updateQRConfig,
+  getAdConfig,
+  updateAdConfig,
+  DEFAULT_AD_CONFIG,
   getUsers,
   banUser,
   unbanUser,
@@ -66,7 +72,7 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, currentUser }) => {
-  const [activeTab, setActiveTab] = useState<'sales' | 'items' | 'qr' | 'users' | 'orders' | 'firebase'>('sales');
+  const [activeTab, setActiveTab] = useState<'sales' | 'items' | 'qr' | 'users' | 'orders' | 'ads' | 'firebase'>('sales');
 
   // State data
   const [products, setProducts] = useState<Product[]>([]);
@@ -100,6 +106,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
   const [isSavingQR, setIsSavingQR] = useState(false);
   const [qrErrorMessage, setQrErrorMessage] = useState('');
   const hasUnsavedQR = useRef(false);
+
+  // Form states for Ad Manager (/settings/adConfig)
+  const [adsEnabled, setAdsEnabled] = useState<boolean>(() => getAdConfig().adsEnabled);
+  const [topAdCode, setTopAdCode] = useState<string>(() => getAdConfig().topAdCode);
+  const [bottomAdCode, setBottomAdCode] = useState<string>(() => getAdConfig().bottomAdCode);
+  const [isSavingAds, setIsSavingAds] = useState(false);
+  const [adSaveSuccess, setAdSaveSuccess] = useState(false);
+  const [adSaveError, setAdSaveError] = useState('');
+  const hasUnsavedAds = useRef(false);
 
   // Firebase RTDB Live Config & Health State
   const [customFirebaseUrl, setCustomFirebaseUrl] = useState('');
@@ -204,18 +219,70 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
     }
   };
 
+  // Sync Ad Manager config from storage ONLY if the admin has no unsaved edits
+  const syncAdsFromStorage = (force: boolean = false) => {
+    const adCfg = getAdConfig();
+    if (force || !hasUnsavedAds.current) {
+      setAdsEnabled(adCfg.adsEnabled);
+      setTopAdCode(adCfg.topAdCode);
+      setBottomAdCode(adCfg.bottomAdCode);
+      hasUnsavedAds.current = false;
+    }
+  };
+
+  const handleSaveAds = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (isSavingAds) return;
+
+    try {
+      setIsSavingAds(true);
+      setAdSaveError('');
+      setAdSaveSuccess(false);
+
+      const updated: AdConfig = {
+        adsEnabled,
+        topAdCode: topAdCode.trim(),
+        bottomAdCode: bottomAdCode.trim(),
+        updatedAt: new Date().toISOString()
+      };
+
+      await updateAdConfig(updated);
+      hasUnsavedAds.current = false;
+      setAdSaveSuccess(true);
+      setTimeout(() => setAdSaveSuccess(false), 4500);
+    } catch (err: any) {
+      console.error('Error saving ad config to Firestore:', err);
+      setAdSaveError(err?.message || 'Failed to save ad settings to Firebase Firestore.');
+    } finally {
+      setIsSavingAds(false);
+    }
+  };
+
+  const handleRestoreDefaultAds = () => {
+    hasUnsavedAds.current = true;
+    setAdsEnabled(DEFAULT_AD_CONFIG.adsEnabled);
+    setTopAdCode(DEFAULT_AD_CONFIG.topAdCode);
+    setBottomAdCode(DEFAULT_AD_CONFIG.bottomAdCode);
+    setAdSaveError('');
+    setAdSaveSuccess(false);
+  };
+
   const refreshAllData = () => {
     refreshGeneralData();
     syncQRFromStorage(false);
+    syncAdsFromStorage(false);
   };
 
   useEffect(() => {
     if (isOpen) {
       refreshGeneralData();
       checkFirebaseStatus();
-      // On modal open, if no unsaved changes, initialize QR fields from current config
+      // On modal open, if no unsaved changes, initialize QR & Ad fields from current config
       if (!hasUnsavedQR.current) {
         syncQRFromStorage(true);
+      }
+      if (!hasUnsavedAds.current) {
+        syncAdsFromStorage(true);
       }
     }
   }, [isOpen]);
@@ -234,12 +301,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
         setQrImagePreview(config.qrImageUrl);
       }
     };
+    const adsHandler = () => {
+      if (!hasUnsavedAds.current) {
+        const adCfg = getAdConfig();
+        setAdsEnabled(adCfg.adsEnabled);
+        setTopAdCode(adCfg.topAdCode);
+        setBottomAdCode(adCfg.bottomAdCode);
+      }
+    };
 
     window.addEventListener('f1_products_updated', generalHandler);
     window.addEventListener('f1_users_updated', generalHandler);
     window.addEventListener('f1_orders_updated', generalHandler);
     window.addEventListener('f1_tickets_updated', generalHandler);
     window.addEventListener('f1_qr_updated', qrHandler);
+    window.addEventListener('f1_ads_updated', adsHandler);
 
     return () => {
       window.removeEventListener('f1_products_updated', generalHandler);
@@ -247,6 +323,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
       window.removeEventListener('f1_orders_updated', generalHandler);
       window.removeEventListener('f1_tickets_updated', generalHandler);
       window.removeEventListener('f1_qr_updated', qrHandler);
+      window.removeEventListener('f1_ads_updated', adsHandler);
     };
   }, []);
 
@@ -640,6 +717,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
 
           <button
             type="button"
+            onClick={() => setActiveTab('ads')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'ads'
+                ? 'bg-[#16c784] text-[#03140e] shadow-[0_0_15px_rgba(22,199,132,0.35)]'
+                : 'text-slate-400 hover:text-white hover:bg-[#051c14]'
+            }`}
+          >
+            <Megaphone className="w-4 h-4" />
+            <span>5. Ad Manager</span>
+            <span
+              className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-black ${
+                adsEnabled
+                  ? activeTab === 'ads'
+                    ? 'bg-[#03140e]/20 text-[#03140e]'
+                    : 'bg-[#16c784]/20 text-[#16c784]'
+                  : 'bg-slate-800 text-slate-400'
+              }`}
+            >
+              {adsEnabled ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => {
               setActiveTab('firebase');
               checkFirebaseStatus();
@@ -651,7 +752,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
             }`}
           >
             <Database className="w-4 h-4" />
-            <span>5. Cloud Database (Firebase RTDB)</span>
+            <span>6. Cloud Database (Firebase)</span>
             {firebaseStatus === 'CONNECTED' ? (
               <span className="w-2 h-2 rounded-full bg-[#16c784]" title="Connected"></span>
             ) : firebaseStatus === 'CHECKING' ? (
@@ -1541,7 +1642,165 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
           )}
 
           {/* ========================================================= */}
-          {/* TAB 5: CLOUD DATABASE (FIREBASE FIRESTORE & RTDB) */}
+          {/* TAB 5: AD MANAGER (ADSTERRA SCRIPTS -> FIRESTORE) */}
+          {/* ========================================================= */}
+          {activeTab === 'ads' && (
+            <div className="max-w-3xl mx-auto space-y-6">
+              <div className="p-6 rounded-2xl bg-[#041a12] border border-[#16c784]/35 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-36 h-36 bg-[#16c784]/10 rounded-full blur-2xl pointer-events-none" />
+
+                {/* Header */}
+                <div className="mb-6 pb-4 border-b border-[#16c784]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+                  <div>
+                    <h3 className="font-brand text-lg sm:text-xl font-bold text-white gold-gradient-text flex items-center gap-2">
+                      <Megaphone className="w-5 h-5 text-[#16c784]" />
+                      <span>Storefront Ad Manager</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 font-mono mt-1">
+                      Paste and manage your Adsterra scripts permanently in Firebase Firestore (<span className="text-[#16c784]">/settings/adConfig</span>).
+                    </p>
+                  </div>
+
+                  {/* Master Toggle Switch */}
+                  <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-[#020d09] border border-[#16c784]/30 shrink-0">
+                    <div className="text-right">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block">
+                        Enable Storefront Ads
+                      </span>
+                      <span className={`text-xs font-mono font-black ${adsEnabled ? 'text-[#16c784]' : 'text-rose-400'}`}>
+                        {adsEnabled ? 'ACTIVE (ON)' : 'DISABLED (OFF)'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={adsEnabled}
+                      aria-label="Enable Storefront Ads"
+                      onClick={() => {
+                        hasUnsavedAds.current = true;
+                        setAdsEnabled((prev) => !prev);
+                        setAdSaveSuccess(false);
+                      }}
+                      className={`relative inline-flex h-7 w-13 items-center rounded-full transition-colors cursor-pointer border ${
+                        adsEnabled
+                          ? 'bg-[#16c784] border-[#16c784] shadow-[0_0_15px_rgba(22,199,132,0.45)]'
+                          : 'bg-slate-800 border-slate-600'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-[#03140e] transition-transform ${
+                          adsEnabled ? 'translate-x-7' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Ad Scripts Form */}
+                <form onSubmit={handleSaveAds} className="space-y-5 relative z-10">
+                  {/* Box 1: Top Ad Code */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-mono uppercase tracking-wider text-[#e5c98b] font-bold">
+                        Top Ad Code
+                      </label>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        Slim 728x90 strip below Category Tabs &amp; above Product Grid
+                      </span>
+                    </div>
+                    <textarea
+                      rows={7}
+                      value={topAdCode}
+                      onChange={(e) => {
+                        hasUnsavedAds.current = true;
+                        setTopAdCode(e.target.value);
+                        setAdSaveSuccess(false);
+                      }}
+                      placeholder={'<script>\n  atOptions = { ... };\n</script>\n<script src="..."></script>'}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e0a] border border-[#16c784]/30 text-[#16c784] font-mono text-xs leading-relaxed placeholder:text-slate-600 focus:outline-none focus:border-[#16c784]"
+                    />
+                  </div>
+
+                  {/* Box 2: Bottom Ad Code */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-mono uppercase tracking-wider text-[#e5c98b] font-bold">
+                        Bottom Ad Code
+                      </label>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        Compact horizontal slot right above Footer (max 130px height)
+                      </span>
+                    </div>
+                    <textarea
+                      rows={5}
+                      value={bottomAdCode}
+                      onChange={(e) => {
+                        hasUnsavedAds.current = true;
+                        setBottomAdCode(e.target.value);
+                        setAdSaveSuccess(false);
+                      }}
+                      placeholder={'<script async="async" data-cfasync="false" src="..."></script>\n<div id="container-..."></div>'}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e0a] border border-[#16c784]/30 text-[#16c784] font-mono text-xs leading-relaxed placeholder:text-slate-600 focus:outline-none focus:border-[#16c784]"
+                    />
+                  </div>
+
+                  {/* Safety note */}
+                  <div className="p-3.5 rounded-xl bg-[#020d09] border border-[#16c784]/20 text-[11px] font-mono text-slate-400 leading-relaxed">
+                    <span className="text-[#16c784] font-bold">Execution &amp; Checkout Protection:</span> Scripts are executed via dynamic DOM &lt;script&gt; injection so Adsterra impressions and clicks register properly. Ads are automatically omitted from the 5-minute QR payment modal and Admin Dashboard.
+                  </div>
+
+                  {/* Status Messages */}
+                  {adSaveError && (
+                    <div className="flex items-center gap-2 p-3.5 rounded-xl bg-rose-950/90 border border-rose-500 text-rose-300 text-xs font-bold">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                      <span>{adSaveError}</span>
+                    </div>
+                  )}
+
+                  {adSaveSuccess && (
+                    <div className="flex items-center gap-2 p-3.5 rounded-xl bg-emerald-950/90 border border-[#16c784] text-[#16c784] text-xs font-bold shadow-[0_0_20px_rgba(22,199,132,0.35)]">
+                      <CheckCircle2 className="w-5 h-5 shrink-0 text-[#16c784]" />
+                      <span>Ad Settings Saved to Firebase Firestore (/settings/adConfig)!</span>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleRestoreDefaultAds}
+                      className="px-4 py-2.5 rounded-xl bg-[#03140e] border border-[#16c784]/30 hover:border-[#e5c98b]/50 text-slate-300 hover:text-[#e5c98b] font-mono font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Restore Default Adsterra Codes</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSaveAds}
+                      disabled={isSavingAds}
+                      className="px-6 py-3 rounded-xl bg-[#16c784] hover:bg-[#1ae095] disabled:opacity-50 text-[#03140e] font-black text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(22,199,132,0.4)] transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      {isSavingAds ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin text-[#03140e]" />
+                          <span>Saving to Firestore...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4 stroke-[3]" />
+                          <span>Save Ad Settings</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB 6: CLOUD DATABASE (FIREBASE FIRESTORE & RTDB) */}
           {/* ========================================================= */}
           {activeTab === 'firebase' && (
             <div className="max-w-3xl mx-auto space-y-6">

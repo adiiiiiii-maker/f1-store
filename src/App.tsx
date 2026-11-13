@@ -30,14 +30,19 @@ import {
   AdminPanel
 } from './components/AdminPanel';
 import {
-  Footer
+  Footer,
+  FeaturesTrustSection
 } from './components/Footer';
+import {
+  AdSlot
+} from './components/AdSlot';
 import {
   Product,
   CategoryType,
   User,
   CartItem,
-  Order
+  Order,
+  AdConfig
 } from './types';
 import {
   getProducts,
@@ -45,7 +50,8 @@ import {
   logoutUser,
   isAdminUser,
   getWishlist,
-  toggleWishlist
+  toggleWishlist,
+  getAdConfig
 } from './services/storage';
 import { Headphones, Shield, Sparkles } from 'lucide-react';
 
@@ -57,6 +63,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [wishlistIds, setWishlistIds] = useState<string[]>([]);
+  const [adConfig, setAdConfig] = useState<AdConfig>(() => getAdConfig());
 
   // Modals & Drawers
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -73,6 +80,7 @@ export default function App() {
     setProducts(getProducts());
     setCurrentUser(getCurrentUser());
     setWishlistIds(getWishlist());
+    setAdConfig(getAdConfig());
   };
 
   useEffect(() => {
@@ -83,17 +91,20 @@ export default function App() {
     const handleAuthUpdate = () => setCurrentUser(getCurrentUser());
     const handleUsersUpdate = () => setCurrentUser(getCurrentUser());
     const handleWishlistUpdate = () => setWishlistIds(getWishlist());
+    const handleAdsUpdate = () => setAdConfig(getAdConfig());
 
     window.addEventListener('f1_products_updated', handleProductsUpdate);
     window.addEventListener('f1_auth_updated', handleAuthUpdate);
     window.addEventListener('f1_users_updated', handleUsersUpdate);
     window.addEventListener('f1_wishlist_updated', handleWishlistUpdate);
+    window.addEventListener('f1_ads_updated', handleAdsUpdate);
 
     return () => {
       window.removeEventListener('f1_products_updated', handleProductsUpdate);
       window.removeEventListener('f1_auth_updated', handleAuthUpdate);
       window.removeEventListener('f1_users_updated', handleUsersUpdate);
       window.removeEventListener('f1_wishlist_updated', handleWishlistUpdate);
+      window.removeEventListener('f1_ads_updated', handleAdsUpdate);
     };
   }, []);
 
@@ -211,8 +222,17 @@ export default function App() {
         onToggleSidebar={() => setIsSidebarOpen(true)}
       />
 
+      {/* 1b. Slim Top Ad Slot (Below Category Tabs, Above Product Grid) */}
+      {adConfig.adsEnabled && adConfig.topAdCode.trim() && (
+        <div className="max-h-[90px] w-full flex justify-center items-center overflow-hidden my-2 px-2">
+          <div className="scale-[0.48] sm:scale-[0.78] md:scale-100 origin-center flex justify-center items-center">
+            <AdSlot htmlCode={adConfig.topAdCode} />
+          </div>
+        </div>
+      )}
+
       {/* 2. Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
         {/* Luxury Hero Banner */}
         <div className="relative rounded-3xl overflow-hidden p-6 sm:p-12 mb-10 border border-[#16c784]/25 glass-card shadow-[0_0_50px_rgba(22,199,132,0.12)]">
           <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-[#16c784]/20 via-[#e5c98b]/10 to-transparent rounded-full blur-3xl pointer-events-none" />
@@ -262,7 +282,20 @@ export default function App() {
         />
       </main>
 
-      {/* 4. Footer */}
+      {/* 4a. Features & Trust Strip */}
+      <FeaturesTrustSection />
+
+      {/* 4b. Compact Bottom Ad Slot (Right Above the Footer) */}
+      {adConfig.adsEnabled && adConfig.bottomAdCode.trim() && (
+        <div className="w-full max-h-[130px] overflow-hidden my-3 px-4 flex justify-center items-center">
+          <AdSlot
+            htmlCode={adConfig.bottomAdCode}
+            className="max-w-7xl w-full flex justify-center items-center [&_img]:max-h-[95px] [&_img]:w-auto"
+          />
+        </div>
+      )}
+
+      {/* 4c. Footer */}
       <Footer onOpenSupport={() => setIsSupportOpen(true)} />
 
       {/* 5. Floating Customer Support Quick Button (accessible to all, including banned users) */}
